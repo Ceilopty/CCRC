@@ -365,8 +365,12 @@ class MainWindow(tkinter.Toplevel):
                 if self.root.pipe.poll():
                     log.log("Got",self.current[0])
                     succ, temp = self.root.pipe.recv()
-                    self.br[self.current[0]].data=temp
-                    self.showdata()
+                    if succ:
+                        self.br[self.current[0]].data=temp
+                        self.showdata()
+                    else:
+                        self.list.delete(1,tkinter.END)
+                        self.list.insert(tkinter.END,"连接失败，请重试")
                 else:self.id=self.after(1000,self.waitresult)
             def showall(self):
                 self.list.delete(1,tkinter.END)
@@ -418,6 +422,8 @@ class MainWindow(tkinter.Toplevel):
 
 @log.log
 def main():
+    from multiprocessing import freeze_support
+    freeze_support()
     from multiprocessing import Process, Pipe
     tEnd, aEnd = Pipe()
     pt = Process(target=ptkinter,args=(tEnd,),name="thinter")
@@ -446,6 +452,7 @@ def ptkinter(pipe):
     log.close()
 
 def pasync(pipe):
+    import traceback
     pipe.send, pipe.recv =log.track(pipe.send), log.track(pipe.recv)
     c = consumer()
     c.send(None)
@@ -460,7 +467,13 @@ def pasync(pipe):
         log.log("Got res: %s %s"%res)
         if res[0]:
             log.log("Succ: %s"%task[0])
-            pipe.send(res)
+            try:
+                pipe.send(res)
+            except:
+                e = traceback.format_exc()
+                log.log(e)
+                log._log(e)
+                pipe.send(0,None)
         else:
             log.log("Failed: %s"%task[0])
             pipe.send(res)
