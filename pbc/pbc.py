@@ -7,8 +7,8 @@ import json
 import re
 import tkinter
 import log
-import asyncio
-import aiohttp
+#import asyncio
+#import aiohttp
 
 log.LOG_ON = 1
 debug = None
@@ -120,7 +120,13 @@ def getflag():
                 else:temp.append(x+(a,"ttd",))
             else: temp.append(x+(a,"tdt",))
     dump(temp,"flags.json")
-def flag(): return load("flags.json") # (name, host, announce, index, type)
+def flag(): 
+    # (name, host, announce, index, type)
+    try: res = load("flags.json")
+    except FileNotFoundError:
+        getflag()
+        return flag()
+    else: return res
 
 class News:
     def __init__(self):
@@ -304,7 +310,8 @@ class MainWindow(tkinter.Toplevel):
                             if res: self.insert(tkinter.END,res.name)     
                         if len(branches) is len(flag()):
                             self.insert(tkinter.END,"全部")
-                            self.after_cancel(self.id)
+                            try:self.after_cancel(self.id)
+                            except:pass
                         else:
                             pipe.send(("Branch(flag()[%d])"%len(branches),))
                 def getlist(self):
@@ -359,7 +366,6 @@ class MainWindow(tkinter.Toplevel):
                     log.log("Got",self.current[0])
                     succ, temp = self.root.pipe.recv()
                     self.br[self.current[0]].data=temp
-                    self.after_cancel(self.id)
                     self.showdata()
                 else:self.id=self.after(1000,self.waitresult)
             def showall(self):
