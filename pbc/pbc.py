@@ -135,12 +135,18 @@ class News:
         return "\n"+"\n".join("%s: %s"%(k,v) for k,v in sorted(self.__dict__.items()))+"\n"
 
 class Branch:
+    __inst__ = {}
     def __new__(cls,flag=None,*args,**kw):
+        if isinstance(flag, str):
+            return Branch.__inst__.get(flag,super().__new__(cls))
         if flag is None:
             return super().__new__(cls)
         elif flag[4] == "ttd":
-            return super().__new__(TTD)
-        return super().__new__(cls)
+            Branch.__inst__[flag[0]] = super().__new__(TTD)
+            return Branch.__inst__[flag[0]]
+        else:
+            Branch.__inst__[flag[0]] = super().__new__(cls)
+            return Branch.__inst__[flag[0]]
     def __init__(self,flag=None):
         flag = flag or ("",)*5
         self.name, self.host, self.announce, self.pages, self.type = flag
@@ -253,17 +259,29 @@ for url in flag()[:0]:
 class MainWindow(tkinter.Toplevel):
     def __init__(self, master=None, cnf={}, **kw):
         super().__init__(master, cnf, **kw)
+        self.pool = {}
         self.withdraw()
         self.root = master
         self.title("各分行公告信息")
         self.geometry("800x600+50+50")
         self.resizable(height=1,width=1)
         self.after(500, lambda: self.focus_force())
+        self.poll()
         self.menubar=self.MenuBar(self)
         self.main_frame = self.MainFrame(self)
         self.protocol("WM_DELETE_WINDOW",self.makesure)
         self.pack()
         self.deiconify()
+    def reg(self, task, callback):
+        id = hash(str(task))
+        if id in self.pool:return
+        self.root.pipe.send((id,task))
+        self.pool[id] = callback
+    def poll(self):
+        if self.root.pipe.poll():
+            id, res = self.root.pipe.recv()
+            self.pool.pop(id,lambda x:None)(res)
+        self.after(100,self.poll)
     def pack(self):
         self.main_frame.pack(fill=tkinter.BOTH,side=tkinter.TOP,expand="yes")
     def makesure(self):
@@ -296,27 +314,27 @@ class MainWindow(tkinter.Toplevel):
                     self.root, self.top = master.root, master.top
                     kw.update({"width":20,"height":37})
                     super().__init__(master,cnf,**kw)
-                    self.after(1000,self.getlist)
+                    self.after(1000,lambda :self.getlist(0))
                     self.pack(fill=tkinter.BOTH,side=tkinter.LEFT,expand="yes")
-                def poll(self):
-                    self.id = self.after(100,self.poll)
-                    pipe = self.root.pipe
-                    branches = self.master.master.branches
-                    if pipe.poll():
-                        succ, res = pipe.recv()
+                def callback(self,index):
+                    def func(res):
+                        succ, res = res
                         if succ:
-                            log.log("suss kakunin",res)
-                            branches.append(res)
-                            if res: self.insert(tkinter.END,res.name)     
-                        if len(branches) is len(flag()):
-                            self.insert(tkinter.END,"全部")
-                            try:self.after_cancel(self.id)
-                            except:pass
+                            if res:
+                                self.master.master.branches.append(res)
+                                self.insert(tkinter.END,res.name)
+                            if index is len(flag())-1:
+                                self.insert(tkinter.END,"全部")
+                            else:
+                                self.top.reg(("Branch(flag()[%d])"%(index+1),),self.callback(index+1))
                         else:
-                            pipe.send(("Branch(flag()[%d])"%len(branches),))
-                def getlist(self):
-                    self.root.pipe.send(("Branch(flag()[%d])"%0,))
-                    self.id = self.after(100, self.poll)
+                            info = "Failed when creating: %s"%flag()[index]
+                            log._log(info)
+                            log.log(info)
+                            self.top.reg(("Branch(flag()[%d])"%index,),self.callback(index))
+                    return  func      
+                def getlist(self,index):
+                    self.top.reg(("Branch(flag()[%d])"%index,),self.callback(index))
                         
         class RightFrame(tkinter.Frame):
             def __init__(self,master=None,cnf={},**kw):
@@ -327,6 +345,7 @@ class MainWindow(tkinter.Toplevel):
                 self.br = self.master.branches
                 self.current=[-1]
                 self.listindex=[-1]
+                self.all = []
                 self.list = self.List(self)
                 self.poll()
             class List(tkinter.Listbox):
@@ -337,44 +356,43 @@ class MainWindow(tkinter.Toplevel):
                     self.scrollbar = tkinter.Scrollbar(self.master, command=self.yview)
                     self.configure(yscrollcommand=self.scrollbar.set)
                     self.scrollbar.pack(fill=tkinter.Y,side=tkinter.RIGHT,before = self)
+                    
             def show(self):
-                try:self.after_cancel(self.id)
-                except:pass
                 self.list.delete(0,tkinter.END)
-                if self.current[0] == len(self.br):
+                index = self.current[0]
+                if index == len(flag()):
                     self.list.insert(0,"%s"%"全部")
-                else:
-                    sub = self.br[self.current[0]]
-                    self.list.insert(0,"%s 分%d页 共%d条"%(sub.name,sub.num,sub.item))
-                if len(self.master.branches) == len(flag()): self.showdetail()
-            def showdetail(self):
-                if self.current[0] == len(flag()):
                     self.showall()
                 else:
-                    task = self.br[self.current[0]]
-                    if task.data:self.showdata()
+                    sub = self.br[index]
+                    self.list.insert(0,"%s 分%d页 共%d条"%(sub.name,sub.num,sub.item))
+                    if sub.data:self.showdata()
                     else:
-                        self.root.pipe.send(("task.do()",{},{"task":task}))
-                        self.list.insert(tkinter.END,"%s"%"显示详细内容")
-                        self.waitresult()
-            def waitresult(self):
-                try:self.after_cancel(self.id)
-                except:pass
-                log.log("Waiting",self.current[0])
-                self.list.insert(tkinter.END,"连接中，请稍候！")
-                if self.root.pipe.poll():
-                    log.log("Got",self.current[0])
-                    succ, temp = self.root.pipe.recv()
+                        self.list.insert(tkinter.END,"获取中,请稍候！")
+                        self.top.reg(("task.do()",{},{"task":sub}),self.callback(sub))
+            def callback(self,sub):
+                def func(res):
+                    succ, res = res
                     if succ:
-                        self.br[self.current[0]].data=temp
-                        self.showdata()
+                        if res:
+                            sub.data = res
+                            if self.br[self.current[0]] is sub:self.show()
+                        elif self.br[self.current[0]] is sub:
+                            self.list.insert(tkinter.END,"暂不支持！即将更新，敬请期待。")
                     else:
-                        self.list.delete(1,tkinter.END)
-                        self.list.insert(tkinter.END,"连接失败，请重试")
-                else:self.id=self.after(1000,self.waitresult)
+                        info = "Failed when getting News List: %s"%sub.name
+                        log._log(info)
+                        log.log(info)
+                        self.top.reg(("task.do()",{},{"task":sub}),self.callback(sub))
+                return func
+            
             def showall(self):
+                self.all.clear()
                 self.list.delete(1,tkinter.END)
-                self.list.insert(tkinter.END,"暂不支持")
+                for x in self.br:
+                    for item in x.data:
+                        self.all.append((x.host,item))
+                        self.list.insert(tkinter.END,"%s %s %s"%(x.name, item.title1,item.date))
             def showdata(self):
                 self.list.delete(1,tkinter.END)
                 for item in self.br[self.current[0]].data:
@@ -386,13 +404,16 @@ class MainWindow(tkinter.Toplevel):
                     self.tryopen()
                 self.after(100,self.poll)
             def tryopen(self):
+                from urllib import parse
                 br_index = self.current[0]
-                if br_index == len(flag()):return
                 item_index = self.listindex[0]
                 if item_index == 0:return
-                data = self.br[br_index].data[item_index-1]
-                from urllib import parse
-                url = parse.urljoin(self.br[br_index].host,data.href)
+                if br_index == len(flag()):
+                    host, data = self.all[item_index-1]
+                else:
+                    host = self.br[br_index].host
+                    data = self.br[br_index].data[item_index-1]
+                url = parse.urljoin(host,data.href)
                 self.open(url,data.title1)
             @staticmethod
             def open(url,title):
@@ -441,9 +462,9 @@ def ptkinter(pipe):
     log.open()
     debug = root = tkinter.Tk(className="pbc")
     root.pipe = pipe
-    pipe.send(("123+456",))
+    pipe.send(('id',("123+456",)))
     if pipe.poll(0.1):
-        log.log('This should be (stat:1,res:579):',pipe.recv())
+        log.log("This should be id:'id',(stat:1,res:579):",pipe.recv())
     root.withdraw()
     root.MainWindow = MainWindow(root)
     root.mainloop()
@@ -458,7 +479,7 @@ def pasync(pipe):
     c.send(None)
     while True:
         if not pipe.poll():continue
-        task = pipe.recv()
+        id,task = pipe.recv()
         log.log("Got task: %s"%(task,))
         if task == "close":
             c.close()
@@ -468,12 +489,12 @@ def pasync(pipe):
         if res[0]:
             log.log("Succ: %s"%task[0])
             try:
-                pipe.send(res)
+                pipe.send((id,res))
             except:
                 e = traceback.format_exc()
                 log.log(e)
                 log._log(e)
-                pipe.send(0,None)
+                pipe.send((id,(0,None)))
         else:
             log.log("Failed: %s"%task[0])
             pipe.send(res)
