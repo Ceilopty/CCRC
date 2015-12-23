@@ -187,6 +187,7 @@ class TTD(Branch):
             print(self.pages)"""
         
     def ttd(self):
+        self.data.clear()
         for x in range(self.num):
             url = self.index(x+1)
             bs = getBS(url)
