@@ -72,11 +72,97 @@ def test():
     loop.close()
     return li,res"""
 
+def func(p,a,c,k,e,d):
+    def toString(num1, num2):
+        def d2c(digit):
+            if digit < 10: return chr(digit+48)
+            else: return chr(digit+87)
+        res = []
+        while num1:
+            res.insert(0,d2c(num1 % num2))
+            num1 = int(num1/num2)
+        if not res:return '0'
+        else: return ''.join(res)
+    def e(c):
+        if c < a:part = ''
+        else:
+            part = e(int(c/a))
+            c = c % a
+        if c > 32: return part + chr( c + 32)
+        else: return part + toString(c,33)
+    while c:
+        c = c - 1
+        d[e(c)] = k[c] or e(c)
+    return re.sub(r'\b\w+\b',lambda x:d[x.group()],p)
+
+def getinf(s):
+    wzwschallenge = re.search(r'var wzwschallenge="(\w+)"',s).groups()[0]
+    wzwschallengex = re.search(r'var wzwschallengex="(\w+)"',s).groups()[0]
+    template = re.search(r'var template=(\d+)',s).groups()[0]
+    prefix = re.search(r"WZWS_CONFIRM_PREFIX_LABEL(\d+)",s).groups()[0]
+    coe = re.search(r"hash \*= (\d+);",s).groups()[0]
+    encoderchars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+    log._log('wzwschalleng,wzwschallengex,template,prefix,coe: %s'%\
+             ((wzwschallenge,wzwschallengex,template,prefix,coe),))
+    def KTKY2RBD9NHPBCIHV9ZMEQQDARSLVFDU(st):
+        l = len(st)
+        i = 0
+        out = ""
+        while i<l:
+            c1 = ord(st[i])&0xff
+            i = i + 1
+            if i == l:
+                out = out + encoderchars[c1>>2]
+                out = out + encoderchars[(c1&0x3)<<4]
+                out = out + "=="
+                break
+            c2 = ord(st[i])
+            i = i + 1
+            if i == l:
+                out = out + encoderchars[c1>>2]
+                out = out + encoderchars[((c1 & 0x3) << 4) | ((c2 & 0xf0) >> 4)]
+                out = out + encoderchars[(c2 & 0xf) << 2]
+                out = out + "="
+                break
+            c3 = ord(st[i])
+            i = i + 1
+            out = out + encoderchars[c1>>2]
+            out = out + encoderchars[((c1 & 0x3) << 4) | ((c2 & 0xf0) >> 4)]
+            out = out + encoderchars[((c2 & 0xf) << 2) | ((c3 & 0xc0) >> 6)]
+            out = out + encoderchars[c3 & 0x3f]
+        return out
+    def QWERTASDFGXYSF():
+        temp = wzwschallenge + wzwschallengex
+        has, i = 0, 0
+        for i in range(len(temp)):
+            has = has + ord(temp[i])
+        has = has * int(coe) + 111111
+        return "WZWS_CONFIRM_PREFIX_LABEL%s%d"%(prefix,has)
+    return {"wzwstemplate":KTKY2RBD9NHPBCIHV9ZMEQQDARSLVFDU(str(template)),
+               "wzwschallenge":KTKY2RBD9NHPBCIHV9ZMEQQDARSLVFDU(str(QWERTASDFGXYSF())),
+               }
+def getJS(bi):
+    text = bi.decode()[463:-34]
+    pat = re.compile(r"'(.*)',(\d+),(\d+),'(.*)'\.split\(\'\|\'\),(\d+),{(.*)}")
+    match = pat.match(text)
+    if not match: return BeautifulSoup()
+    p, a, c, k, e, d = match.groups()
+    a = int(a)
+    c = int(c)
+    log._log('ac %s %s'%(a,c))
+    k = k.split('|')
+    d = {}
+    st = func(p,a,c,k,e,d)
+    return st
 def getBS(url):
     log._log("getBs(%s)"%(url,))
     import time
     time.sleep(0.1)
     req = requests.get(url)
+    st = getJS(req.content)
+    cookies = requests.cookies.cookiejar_from_dict(getinf(st),req.cookies)
+    req.close()
+    req = requests.get(url,cookies=cookies)
     res = BeautifulSoup(req.content,"html5lib")
     req.close()
     return res
@@ -523,7 +609,7 @@ if __name__ == "__main__":
             print(x)
     for x in debug[1][0]:
         print("%s\n\n"%x)"""
-    main()
+   # main()
 
 
 
